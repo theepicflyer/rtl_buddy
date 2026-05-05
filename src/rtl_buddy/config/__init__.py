@@ -1,5 +1,4 @@
 # rtl-buddy
-# vim: set sw=2:ts=2:et:
 #
 # Copyright 2024 rtl_buddy contributors
 #
@@ -16,3 +15,23 @@ from .spec import SpecConfig, SpecBlock, SpecCoverageItem
 from .verible import VeribleConfig
 from .coverage import CoverageConfig, CoverageConfigFile
 from .coverview import CoverviewConfig, CoverviewConfigFile
+
+__all__ = [
+    "TestConfig",
+    "TestbenchConfig",
+    "SuiteConfig",
+    "RegConfig",
+    "RootConfig",
+    "PlatformConfig",
+    "RtlBuilderConfig",
+    "ModelConfig",
+    "ModelConfigLoader",
+    "VeribleConfig",
+    "CoverageConfig",
+    "CoverageConfigFile",
+    "CoverviewConfig",
+    "CoverviewConfigFile",
+    "SpecConfig",
+    "SpecBlock",
+    "SpecCoverageItem",
+]
