@@ -11,7 +11,7 @@ description: How to install rtl_buddy into a project using uv, including prerequ
 - Python 3.11 or later
 - `uv`
 - Simulation tool on `PATH`: Verilator (macOS/Linux) or VCS (Linux)
-- Optional Verible binaries if you want to use `uv run rb verible ...`
+- Optional: Verible if you want to use `uv run rb verible ...` — e.g. `brew tap chipsalliance/verible && brew install verible` on macOS, or see [Verible releases](https://github.com/chipsalliance/verible/releases) for other platforms
 - Optional system-level coverage tools:
   - `lcov` for `.info` export and HTML reports
   - Antmicro `coverview` for Coverview package generation
