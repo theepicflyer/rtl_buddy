@@ -42,16 +42,18 @@ Usage: rtl-buddy [OPTIONS] COMMAND [ARGS]...
 │                                                              exit.                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────╮
-│ test              run a simple test                                                  │
-│ randtest          repeat a test with multiple random seeds                           │
-│ regression        run rtl regression                                                 │
-│ filelist          generate filelists using models.yaml                               │
-│ verible           run verible cmd                                                    │
-│ synth             run synthesis                                                      │
-│ synth-regression  run synthesis regression                                           │
-│ skill             manage the rtl_buddy agent skill                                   │
-│ docs              browse bundled documentation                                       │
-│ spec              spec traceability commands                                         │
+│ test               run a simple test                                                 │
+│ randtest           repeat a test with multiple random seeds                          │
+│ regression         run rtl regression                                                │
+│ filelist           generate filelists using models.yaml                              │
+│ verible            run verible cmd                                                   │
+│ wave               open waveform viewer for a test                                   │
+│ wave-install-nvim  install nvim plugin for rb wave annotation                        │
+│ synth              run synthesis                                                     │
+│ synth-regression   run synthesis regression                                          │
+│ skill              manage the rtl_buddy agent skill                                  │
+│ docs               browse bundled documentation                                      │
+│ spec               spec traceability commands                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -186,6 +188,39 @@ Usage: rtl-buddy verible [OPTIONS] CMD [VERIBLE_ARGS]...
 ╰──────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+## wave
+
+```text
+Usage: rtl-buddy wave [OPTIONS] TEST_NAME                                              
+                                                                                        
+ open waveform viewer for a test                                                        
+                                                                                        
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────╮
+│ *    test_name      TEXT  name of test to open waveform for [required]               │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────╮
+│ --test-config     -c      TEXT  tests.yaml to use [default: tests.yaml]              │
+│ --surfer                  TEXT  cfg-surfer entry name [default: surfer-default]      │
+│ --resim                         force re-run of debug sim even if FST exists         │
+│ --focused-signal                annotate only the signal selected via Go to          │
+│                                 declaration; default annotates all signals in scope  │
+│ --help                          Show this message and exit.                          │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+## wave-install-nvim
+
+```text
+Usage: rtl-buddy wave-install-nvim [OPTIONS]                                           
+                                                                                        
+ install nvim plugin for rb wave annotation                                             
+                                                                                        
+╭─ Options ────────────────────────────────────────────────────────────────────────────╮
+│ --force          overwrite existing installation                                     │
+│ --help           Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────╯
 ```
 

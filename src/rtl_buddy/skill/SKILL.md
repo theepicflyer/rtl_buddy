@@ -50,10 +50,20 @@ Use `rtl-buddy --machine docs show reference/yaml` for exact schemas.
 
 ## Artefact locations
 
-- `rtl_buddy.log` is JSONL in `--machine` mode and is written to the invocation/suite directory.
-- Single-run outputs live under `artefacts/<test>/`; `randtest` iterations use `artefacts/<test>/run-0001/` etc.
-- Suite-root `test.log`, `test.err`, and `test.randseed` symlink to the latest run.
-- Multi-suite runs have separate `rtl_buddy.log` and `artefacts/` per suite; summarize results per suite.
+- `rtl_buddy.log` — JSONL in `--machine` mode; written to the suite root (CWD you invoked from).
+- `artefacts/<test>/test.log`, `test.err`, `test.randseed`, `coverage.dat` — sim outputs for a single run.
+- `artefacts/<test>/compile.log`, `run.f` — compile outputs, always at the test root (not per run-id).
+- `artefacts/<test>/run-0001/test.log` etc. — per-iteration outputs for `randtest`.
+- `artefacts/<test>/dump.fst` — FST waveform produced by debug-mode builds (`-M debug`).
+- Symlinks `test.log`, `test.err`, `test.randseed` at the suite root point at the latest run.
+- For multi-suite runs, each suite directory has its own `rtl_buddy.log` and `artefacts/`; report logs per suite.
+- Next docs: `rtl-buddy docs show reference/cli`, `rtl-buddy docs show reference/yaml`, `rtl-buddy docs show known-issues`
+
+## Waveform viewing
+
+- `rb wave <test>` opens `artefacts/<test>/dump.fst` in Surfer (runs debug sim first if no FST exists).
+- Signal layout files follow the convention `<test>.surfer` placed next to `tests.yaml` (e.g. `verif/sandbox/basic.surfer`). Use `variable_add <path>` and `zoom_fit` commands. See `verif/mem/tb_spsram.surfer` for a reference example.
+- Surfer must be configured in `cfg-surfer` in `root_config.yaml`. Run `rtl-buddy docs show concepts/root-config` for the schema.
 
 ## Bugs & Improvements
 If you discover a rtl_buddy bug or potential improvement, you can post an issue on GitHub <https://github.com/rtl-buddy/rtl_buddy/> documenting your findings, with permission from your user.

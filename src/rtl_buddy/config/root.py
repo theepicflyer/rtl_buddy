@@ -16,6 +16,7 @@ from .rtl import RtlBuilderConfig
 from .verible import VeribleConfigFile
 from .coverage import CoverageConfigFile
 from .coverview import CoverviewConfigFile
+from .surfer import SurferConfig, SurferConfigFile
 from .synth import (
     SynthToolConfig,
     SynthToolConfigFile,
@@ -98,6 +99,7 @@ class RootConfigFile:
     coverviews: list[CoverviewConfigFile] = field(
         rename="cfg-coverview", default_factory=list
     )
+    surfers: list[SurferConfigFile] = field(rename="cfg-surfer", default_factory=list)
     synth_tools: list[SynthToolConfigFile] = field(
         rename="cfg-synth-tools", default_factory=list
     )
@@ -145,6 +147,7 @@ class RootConfig:
         self.verible_cfgs = dict()
         self.coverage_cfgs = dict()
         self.coverview_cfgs = dict()
+        self.surfer_cfgs: dict = {}
         self.synth_tool_cfgs = dict()
         self.synth_lib_cfgs = dict()
         self.platform_cfg = None
@@ -181,6 +184,9 @@ class RootConfig:
             self.coverage_cfgs = {cfg.name: cfg.initialise() for cfg in data.coverages}
             self.coverview_cfgs = {
                 cfg.name: cfg.initialise(self.root_cfg_path) for cfg in data.coverviews
+            }
+            self.surfer_cfgs = {
+                cfg.name: cfg.initialise(self.root_cfg_path) for cfg in data.surfers
             }
 
             # Populate synth tool configs
@@ -362,6 +368,17 @@ class RootConfig:
           cfg (CoverviewConfig|None): Matching Coverview configuration, if present.
         """
         return self.coverview_cfgs.get(simulator_name)
+
+    def get_surfer_cfg(self, name: str = "surfer-default") -> "SurferConfig | None":
+        """
+        Get Surfer configuration by name.
+
+        Args:
+          name (str): cfg-surfer entry name. Defaults to "surfer-default".
+        Returns:
+          cfg (SurferConfig|None): Matching Surfer configuration, if present.
+        """
+        return self.surfer_cfgs.get(name)
 
     def get_synth_tool_cfg(self, name: str):
         """

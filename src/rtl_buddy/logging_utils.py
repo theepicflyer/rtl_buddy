@@ -321,6 +321,15 @@ def _human_message(event: str, fields: Mapping[str, Any]) -> str:
             return "verible binaries unavailable"
         case "verible.command_invalid":
             return f'verible: invalid command "{fields.get("command")}"'
+        case "wave.nvim_plugin_missing":
+            return (
+                f'nvim plugin not installed — run "rb wave-install-nvim" to enable wave annotations'
+                f" (expected: {fields.get('path')})"
+            )
+        case "wcp.resolve_failed":
+            return f'WCP: could not find source for "{fields.get("variable")}" (searched {fields.get("searched")} files)'
+        case "wcp.connection_lost":
+            return f"WCP: connection lost ({fields.get('reason')}); waiting for Surfer to reconnect"
         case "synth.sdc_multi_clock":
             periods = fields.get("periods_ns", [])
             used = fields.get("used_ns")
