@@ -51,6 +51,7 @@ Usage: rtl-buddy [OPTIONS] COMMAND [ARGS]...
 │ wave-install-nvim  install nvim plugin for rb wave annotation                        │
 │ synth              run synthesis                                                     │
 │ synth-regression   run synthesis regression                                          │
+│ pnr                run place-and-route                                               │
 │ cdc                run CDC lint                                                      │
 │ cdc-regression     run CDC lint regression                                           │
 │ skill              manage the rtl_buddy agent skill                                  │
@@ -311,6 +312,62 @@ Usage: rtl-buddy synth-regression [OPTIONS]
 │ --reg-level   -l      INTEGER  synthesis regression level to stop at [default: 0]    │
 │ --effort              TEXT     override synthesis effort (must match                 │
 │                                cfg-synth-efforts entry)                              │
+│ --help                         Show this message and exit.                           │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+## pnr
+
+```text
+Usage: rtl-buddy pnr [OPTIONS] [PNR_NAME]                                              
+                                                                                        
+ run place-and-route                                                                    
+                                                                                        
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────╮
+│   pnr_name      [PNR_NAME]  name of pnr run                                          │
+│                             [default: (run all entries in the suite)]                │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────╮
+│ --pnr-config  -c      TEXT     pnr.yaml to use [default: pnr.yaml]                   │
+│ --list                         list pnr runs in the selected config and exit         │
+│ --reg-level   -l      INTEGER  run only entries with reglvl at or below this value   │
+│                                [default: 0]                                          │
+│ --gds                          stream out GDS via KLayout after a successful P&R     │
+│ --png                          render a PNG of the routed GDS via KLayout (implies   │
+│                                --gds)                                                │
+│ --help                         Show this message and exit.                           │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+## cdc
+
+```text
+Usage: rtl-buddy cdc [OPTIONS] [CDC_NAME]                                              
+                                                                                        
+ run CDC lint                                                                           
+                                                                                        
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────╮
+│   cdc_name      [CDC_NAME]  name of CDC analysis to run                              │
+│                             [default: (run all analyses)]                            │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────╮
+│ --cdc-config  -c      TEXT  cdc.yaml to use [default: cdc.yaml]                      │
+│ --list                      list analyses in the selected config and exit            │
+│ --help                      Show this message and exit.                              │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+## cdc-regression
+
+```text
+Usage: rtl-buddy cdc-regression [OPTIONS]                                              
+                                                                                        
+ run CDC lint regression                                                                
+                                                                                        
+╭─ Options ────────────────────────────────────────────────────────────────────────────╮
+│ --reg-config  -c      TEXT     path to cdc_regression.yaml                           │
+│                                [default: (Use ./cdc_regression.yaml if present)]     │
+│ --reg-level   -l      INTEGER  CDC regression level to stop at [default: 0]          │
 │ --help                         Show this message and exit.                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────╯
 ```

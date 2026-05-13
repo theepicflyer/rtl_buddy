@@ -1,21 +1,29 @@
 ---
-description: How to run synthesis flows with rtl_buddy using synth.yaml, cfg-synth-tools, cfg-synth-libs, and the rb synth command.
+description: How to run synthesis flows with rtl_buddy using synth.yaml, cfg-synth-tools, cfg-pdks + cfg-synth-platforms, and the rb synth command.
 ---
 
 # Synthesis
+
+> **Integration type:** Pluggable. `rb synth` selects a synthesis tool via `tool:` in `synth.yaml`; the schema is open for future backends.
+>
+> **Curated tools (`tool:` values):** `yosys` (Yosys-only flow); `openroad` (Yosys + OpenROAD-STA two-stage flow).
+>
+> **External binaries required:** `yosys` (the [rtl-buddy/yosys fork](https://github.com/rtl-buddy/yosys), see [Installing Yosys](#installing-yosys)); plus `openroad` on `PATH` when `tool: openroad` is selected — see [Installing OpenROAD](#installing-openroad).
+>
+> See also: [Installation — External tools by feature](../install.md#external-tools-by-feature).
 
 `rtl_buddy` provides a tool-agnostic synthesis flow that mirrors the simulation workflow. Synthesis runs are described in `synth.yaml` files; tool-specific defaults and PDK library paths live in `root_config.yaml`.
 
 ## Supported backends
 
-`rtl_buddy` ships two synthesis backends selectable via `tool:` in `synth.yaml`:
+`rb synth` ships two backends selectable via `tool:` in `synth.yaml`. Both backends use Yosys to map RTL to a gate-level netlist; they differ in whether OpenROAD is run afterwards for static timing analysis.
 
 | `tool:` | Backend | Multi-clock SDC | Reports |
 |---------|---------|-----------------|---------|
-| `yosys` | Yosys + ABC | Workaround (min period) | Gates, Area, WNS |
+| `yosys` | Yosys + ABC (single stage) | Workaround (min period) | Gates, Area, WNS |
 | `openroad` | Yosys (stage 1) + OpenROAD STA (stage 2) | Native `read_sdc` | Gates, Area, WNS, TNS |
 
-The OpenROAD backend removes the multi-clock SDC workaround: stage 1 maps RTL to a gate-level netlist with Yosys, stage 2 feeds that netlist into OpenROAD which loads the SDC natively and reports WNS (actual worst slack from `report_checks`) and TNS (total negative slack).
+The `openroad` backend removes the multi-clock SDC workaround: stage 1 maps RTL to a gate-level netlist with Yosys, stage 2 feeds that netlist into OpenROAD which loads the SDC natively and reports WNS (actual worst slack from `report_checks`) and TNS (total negative slack).
 
 ## Installing Yosys
 
@@ -74,8 +82,7 @@ syntheses:
     model: "test_module"
     model_path: "../../design/sandbox/models.yaml"
     tool: "yosys"
-    libraries:
-      - "sky130hd_tt"
+    platform: "sky130hd_tt"
     constraints: "constraints.sdc"
     params:
       WIDTH: 8
@@ -92,8 +99,7 @@ syntheses:
     model: "test_module"
     model_path: "../../design/sandbox/models.yaml"
     tool: "openroad"
-    libraries:
-      - "sky130hd_tt"
+    platform: "sky130hd_tt"
     constraints: "constraints.sdc"
     reglvl: 0
 ```
@@ -107,7 +113,7 @@ syntheses:
 | `model` | Model name from `models.yaml`; also used as the synthesis top module |
 | `model_path` | Path to `models.yaml`, resolved relative to the `synth.yaml` directory |
 | `tool` | Synthesis tool name — must match a `cfg-synth-tools` entry in `root_config.yaml` |
-| `libraries` | Optional list of library names from `cfg-synth-libs`; enables technology mapping |
+| `platform` | Optional synth platform name from `cfg-synth-platforms` (which in turn references a `cfg-pdks` entry); enables technology mapping |
 | `constraints` | Optional SDC constraints file, resolved relative to `synth.yaml` |
 | `params` | Optional key-value pairs passed as top-level parameter overrides (`chparam` in Yosys) |
 | `defines` | Optional compile-time Verilog defines passed via `-D KEY=VALUE` |
@@ -162,8 +168,7 @@ syntheses:
     model: "test_module"
     model_path: "../../design/sandbox/models.yaml"
     tool: "openroad"
-    libraries:
-      - "sky130hd_tt"
+    platform: "sky130hd_tt"
     constraints: "constraints.sdc"
     effort: "quick"      # references a cfg-synth-efforts entry
     reglvl: 0
@@ -264,22 +269,29 @@ Running the same DMA design at all three levels (ip_dma, sky130hd_tt, 5-clock SD
 
 The pessimization between `standard` and `accurate` (−1.347 vs −1.172 ns WNS) shows the wire-load model adding parasitic RC; the gate count is unchanged because the Yosys stage runs identically.
 
-### PDK library configuration
+### PDK and synth platform configuration
 
-Liberty files for technology mapping are registered under `cfg-synth-libs`. Paths are resolved relative to `root_config.yaml`:
+PDK assets live under `cfg-pdks` — one entry per process, with corners as sub-fields. Each entry owns *everything* PDK-bound (Liberty per corner, tech-LEF, macro-LEF, cell-GDS, KLayout `.lyt`/`.lyp`, SITE, tie/fill cells); synth and P&R consume what they need.
+
+`cfg-synth-platforms` is a thin selector layer: each entry references a PDK + corner. `synth.yaml` then picks a platform name via `platform:`. All paths are resolved relative to `root_config.yaml`.
 
 ```yaml
-cfg-synth-libs:
+cfg-pdks:
+  - name: "sky130hd"
+    site: "unithd"
+    corners:
+      tt: "pdk/sky130hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
+    tech-lef:  "pdk/sky130hd/lef/sky130_fd_sc_hd.tlef"
+    macro-lef: "pdk/sky130hd/lef/sky130_fd_sc_hd_merged.lef"
+
+cfg-synth-platforms:
   - name: "sky130hd_tt"
-    path: "pdk/sky130hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
-    lef-paths:                                          # required for OpenROAD backend
-      - "pdk/sky130hd/lef/sky130_fd_sc_hd_merged.lef"
+    pdk: "sky130hd"
+    corner: "tt"
 ```
 
-The `libraries` list in `synth.yaml` references entries by name.
-
-- **Yosys backend:** uses `path` (liberty) for `read_liberty` → `dfflibmap` → `abc -liberty` → `write_verilog`. `lef-paths` is ignored.
-- **OpenROAD backend:** requires both `path` (liberty) for timing and `lef-paths` (LEF) for technology loading. Without `lef-paths` the run fails immediately with an actionable error.
+- **Yosys backend:** uses the platform's Liberty for `read_liberty` → `dfflibmap` → `abc -liberty` → `write_verilog`. LEF is ignored.
+- **OpenROAD backend:** requires both Liberty and LEF. The `tech-lef` and `macro-lef` on the PDK are passed through automatically; per-block extras can be added via `lef-paths:` on the `synth.yaml` entry. A platform with no LEF assets fails immediately with an actionable error.
 
 PDK files are typically large and should be gitignored. Provide a download script:
 

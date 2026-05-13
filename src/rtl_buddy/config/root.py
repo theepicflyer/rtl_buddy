@@ -20,12 +20,15 @@ from .surfer import SurferConfig, SurferConfigFile
 from .synth import (
     SynthToolConfig,
     SynthToolConfigFile,
-    SynthLibConfig,
-    SynthLibConfigFile,
+    SynthPlatformConfig,
+    SynthPlatformConfigFile,
     SynthEffortConfig,
     SynthEffortConfigFile,
     default_effort_config,
 )
+from .pdk import PdkConfig, PdkConfigFile
+from .pnr import PnrToolConfig, PnrToolConfigFile
+from .pnr_platform import PnrPlatformConfig, PnrPlatformConfigFile
 from .cdc import CdcToolConfig, CdcToolConfigFile
 from ..errors import FatalRtlBuddyError
 from ..logging_utils import log_event
@@ -107,8 +110,15 @@ class RootConfigFile:
     synth_tools: list[SynthToolConfigFile] = field(
         rename="cfg-synth-tools", default_factory=list
     )
-    synth_libs: list[SynthLibConfigFile] = field(
-        rename="cfg-synth-libs", default_factory=list
+    pdks: list[PdkConfigFile] = field(rename="cfg-pdks", default_factory=list)
+    synth_platforms: list[SynthPlatformConfigFile] = field(
+        rename="cfg-synth-platforms", default_factory=list
+    )
+    pnr_platforms: list[PnrPlatformConfigFile] = field(
+        rename="cfg-pnr-platforms", default_factory=list
+    )
+    pnr_tools: list[PnrToolConfigFile] = field(
+        rename="cfg-pnr-tools", default_factory=list
     )
     cdc_tools: list[CdcToolConfigFile] = field(
         rename="cfg-cdc-tools", default_factory=list
@@ -159,7 +169,10 @@ class RootConfig:
         self.coverview_cfgs = dict()
         self.surfer_cfgs: dict = {}
         self.synth_tool_cfgs = dict()
-        self.synth_lib_cfgs = dict()
+        self.pdk_cfgs: dict = {}
+        self.synth_platform_cfgs: dict = {}
+        self.pnr_platform_cfgs: dict = {}
+        self.pnr_tool_cfgs: dict = {}
         self.cdc_tool_cfgs: dict = {}
         self.synth_effort_cfgs: dict = {}
         self.platform_cfg = None
@@ -206,10 +219,35 @@ class RootConfig:
                 cfg.name: SynthToolConfig(cfg) for cfg in data.synth_tools
             }
 
-            # Populate synth lib configs
-            self.synth_lib_cfgs = {
-                cfg.name: SynthLibConfig(cfg, self.root_cfg_path)
-                for cfg in data.synth_libs
+            # Populate PDK configs (referenced by synth + pnr platforms)
+            self.pdk_cfgs = {
+                cfg.name: PdkConfig(cfg, self.root_cfg_path) for cfg in data.pdks
+            }
+
+            def _pdk_lookup(name: str) -> PdkConfig:
+                pdk = self.pdk_cfgs.get(name)
+                if pdk is None:
+                    raise FatalRtlBuddyError(
+                        f"PDK '{name}' not found in cfg-pdks; "
+                        f"available: {sorted(self.pdk_cfgs)}"
+                    )
+                return pdk
+
+            # Populate synth platform configs (referencing PDKs by name)
+            self.synth_platform_cfgs = {
+                cfg.name: SynthPlatformConfig(cfg, _pdk_lookup)
+                for cfg in data.synth_platforms
+            }
+
+            # Populate P&R platform configs
+            self.pnr_platform_cfgs = {
+                cfg.name: PnrPlatformConfig(cfg, _pdk_lookup)
+                for cfg in data.pnr_platforms
+            }
+
+            # Populate P&R tool configs
+            self.pnr_tool_cfgs = {
+                cfg.name: PnrToolConfig(cfg) for cfg in data.pnr_tools
             }
 
             # Populate CDC tool configs
@@ -420,6 +458,19 @@ class RootConfig:
             )
         return cfg
 
+    def get_pnr_tool_cfg(self, name: str):
+        """
+        Get P&R tool configuration by name.
+
+        Args:
+          name (str): Tool name as defined in cfg-pnr-tools.
+        Returns:
+          cfg (PnrToolConfig|None): Matching P&R tool configuration, or
+            None if no entry with that name is configured. Callers fall
+            back to the bare tool name on PATH when None is returned.
+        """
+        return self.pnr_tool_cfgs.get(name)
+
     def get_cdc_tool_cfg(self, name: str):
         """
         Get CDC tool configuration by name.
@@ -436,21 +487,41 @@ class RootConfig:
             raise FatalRtlBuddyError(f"CDC tool '{name}' not found in cfg-cdc-tools")
         return cfg
 
-    def get_synth_lib_cfg(self, name: str):
-        """
-        Get synthesis library configuration by name.
-
-        Args:
-          name (str): Library name as defined in cfg-synth-libs.
-        Returns:
-          cfg (SynthLibConfig): Matching synthesis library configuration.
-        Raises:
-          FatalRtlBuddyError: If no library with that name is configured.
-        """
-        cfg = self.synth_lib_cfgs.get(name)
+    def get_pdk_cfg(self, name: str) -> PdkConfig:
+        """Get a PDK configuration by name (cfg-pdks entry)."""
+        cfg = self.pdk_cfgs.get(name)
         if cfg is None:
             raise FatalRtlBuddyError(
-                f"synthesis library '{name}' not found in cfg-synth-libs"
+                f"PDK '{name}' not found in cfg-pdks; available: {sorted(self.pdk_cfgs)}"
+            )
+        return cfg
+
+    def get_synth_platform_cfg(self, name: str) -> SynthPlatformConfig:
+        """
+        Get a synthesis platform configuration by name.
+
+        Args:
+          name (str): Platform name as defined in cfg-synth-platforms.
+        Returns:
+          cfg (SynthPlatformConfig): Matching synth platform configuration.
+        Raises:
+          FatalRtlBuddyError: If no platform with that name is configured.
+        """
+        cfg = self.synth_platform_cfgs.get(name)
+        if cfg is None:
+            raise FatalRtlBuddyError(
+                f"synth platform '{name}' not found in cfg-synth-platforms; "
+                f"available: {sorted(self.synth_platform_cfgs)}"
+            )
+        return cfg
+
+    def get_pnr_platform_cfg(self, name: str) -> PnrPlatformConfig:
+        """Get a P&R platform configuration by name (cfg-pnr-platforms entry)."""
+        cfg = self.pnr_platform_cfgs.get(name)
+        if cfg is None:
+            raise FatalRtlBuddyError(
+                f"pnr platform '{name}' not found in cfg-pnr-platforms; "
+                f"available: {sorted(self.pnr_platform_cfgs)}"
             )
         return cfg
 

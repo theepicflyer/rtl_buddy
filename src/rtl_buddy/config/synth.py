@@ -1,7 +1,7 @@
 import logging
 import os
 import pprint
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dc_field
 
 from serde import serde, field
 from serde.yaml import from_yaml
@@ -15,29 +15,43 @@ logger = logging.getLogger(__name__)
 
 
 @serde
-class SynthLibConfigFile:
+class SynthPlatformConfigFile:
     name: str
-    path: str
-    lef_paths: list[str] = field(rename="lef-paths", default_factory=list)
+    pdk: str
+    corner: str = ""
 
 
-class SynthLibConfig:
-    def __init__(self, cfg: SynthLibConfigFile, root_cfg_path: str):
+class SynthPlatformConfig:
+    """A synthesis-side view of a PDK + corner selection.
+
+    Backends consume `get_path()` (Liberty for STA / tech mapping) and
+    `get_lef_paths()` (tech + macro LEF from the PDK). Block-specific
+    LEFs live on the per-run synth.yaml (`SynthConfig.get_lef_paths()`).
+    """
+
+    def __init__(self, cfg: SynthPlatformConfigFile, pdk_lookup):
         self._name = cfg.name
-        _cfg_dir = os.path.dirname(root_cfg_path)
-        self._path = os.path.normpath(os.path.join(_cfg_dir, cfg.path))
-        self._lef_paths = [
-            os.path.normpath(os.path.join(_cfg_dir, p)) for p in cfg.lef_paths
-        ]
+        self._pdk_name = cfg.pdk
+
+        pdk = pdk_lookup(cfg.pdk)
+        self._corner = cfg.corner or pdk.get_default_corner()
+        self._lib_path = pdk.get_corner_path(self._corner)
+        self._lef_paths = [p for p in (pdk.get_tech_lef(), pdk.get_macro_lef()) if p]
 
     def get_name(self) -> str:
         return self._name
 
+    def get_pdk_name(self) -> str:
+        return self._pdk_name
+
+    def get_corner(self) -> str:
+        return self._corner
+
     def get_path(self) -> str:
-        return self._path
+        return self._lib_path
 
     def get_lef_paths(self) -> list[str]:
-        return self._lef_paths
+        return list(self._lef_paths)
 
 
 @dataclass
@@ -141,7 +155,8 @@ class SynthConfigFile:
     constraints: str | None = None
     params: dict | None = None
     defines: dict | None = None
-    libraries: list[str] | None = None
+    platform: str | None = None
+    lef_paths: list[str] = field(rename="lef-paths", default_factory=list)
     reglvl: int | dict | None = field(rename="reglvl", default=None)
     tool_overrides: dict | None = None
     effort: str | None = None
@@ -155,6 +170,9 @@ class SynthConfigFile:
             if self.constraints is not None
             else None
         )
+        lef_paths = [
+            os.path.normpath(os.path.join(config_dir, p)) for p in self.lef_paths
+        ]
         return SynthConfig(
             name=self.name,
             desc=self.desc,
@@ -163,7 +181,8 @@ class SynthConfigFile:
             constraints=constraints,
             params=self.params,
             defines=self.defines,
-            libraries=self.libraries,
+            platform=self.platform,
+            lef_paths=lef_paths,
             _reglvl=self.reglvl,
             tool_overrides=self.tool_overrides,
             effort=self.effort,
@@ -179,10 +198,11 @@ class SynthConfig:
     constraints: str | None
     params: dict | None
     defines: dict | None
-    libraries: list[str] | None
+    platform: str | None
     _reglvl: int | dict | None
     tool_overrides: dict | None
     effort: str | None = None
+    lef_paths: list[str] = dc_field(default_factory=list)
 
     def get_effort_name(self) -> str | None:
         return self.effort
@@ -205,8 +225,11 @@ class SynthConfig:
     def get_defines(self) -> dict | None:
         return self.defines
 
-    def get_libraries(self) -> list[str] | None:
-        return self.libraries
+    def get_platform(self) -> str | None:
+        return self.platform
+
+    def get_lef_paths(self) -> list[str]:
+        return list(self.lef_paths)
 
     def get_tool_name(self) -> str:
         return self.tool
