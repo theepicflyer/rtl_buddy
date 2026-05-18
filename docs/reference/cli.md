@@ -52,6 +52,9 @@ Usage: rtl-buddy [OPTIONS] COMMAND [ARGS]...
 │ synth              run synthesis                                                     │
 │ synth-regression   run synthesis regression                                          │
 │ pnr                run place-and-route                                               │
+│ power              run power analysis                                                │
+│ power-regression   run power analysis regression                                     │
+│ saif               convert FST/VCD trace to SAIF v2.0                                │
 │ cdc                run CDC lint                                                      │
 │ cdc-regression     run CDC lint regression                                           │
 │ fpv                run formal property verification                                  │
