@@ -156,10 +156,14 @@ class SbyFpv:
         lines.append("")
 
         # [script]
+        # Order: design sources -> constraints (assumes in scope first) ->
+        # properties (asserts that depend on those assumes).
         lines.append("[script]")
         for inc in incdirs:
             lines.append(f"verilog_defaults -add -I {inc}")
-        all_sources = list(sources) + list(cfg.get_properties())
+        constraints = cfg.get_constraints()
+        constraint_files = [constraints] if constraints else []
+        all_sources = list(sources) + constraint_files + list(cfg.get_properties())
         for src in all_sources:
             # Use basename — files are dropped into the sby workdir under [files].
             lines.append(f"read -sv -formal {os.path.basename(src)}")
@@ -196,6 +200,12 @@ class SbyFpv:
                 raise FatalRtlBuddyError(
                     f"{cfg.get_name()}: property file not found: {prop}"
                 )
+
+        constraints = cfg.get_constraints()
+        if constraints is not None and not os.path.isfile(constraints):
+            raise FatalRtlBuddyError(
+                f"{cfg.get_name()}: constraints file not found: {constraints}"
+            )
 
         opts = self.tool_cfg.get_opts(
             cfg.get_tool_overrides_for(self.tool_cfg.get_name())
