@@ -89,6 +89,7 @@ REQUEST_ROUTING: dict[str, Origin] = {
     "wave_zoom_to_fit": Origin.WAVE,
     "open_source": Origin.SRC,
     "view_pan_to": Origin.VIEW,
+    "view_capture": Origin.VIEW,
 }
 """Request ``type`` → ``origin`` of the client that handles it.
 
