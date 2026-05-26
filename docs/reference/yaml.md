@@ -310,6 +310,7 @@ tests:
 | `preproc.path` | string | Path to pre-processing script |
 | `postproc.path` | string | Path to post-processing script (parsed but not yet fully active) |
 | `covers` | list of strings | IDs of spec coverage items this test addresses (e.g. `["BLOCK-COV-01"]`). Used by `rb spec check-coverage`; has no effect at simulation time. |
+| `assertions` | bool | When true and the builder is Verilator, compile in SVA via `--assert` (and `--coverage-user` for cover-property hits) and add an `Assertions` column to the `rb test` results table. See [Assertion-Based Verification](../concepts/abv-simulation.md). |
 
 ### cocotb testbenches
 
@@ -678,6 +679,8 @@ verifications:
 | `engines` | list | Sby engine specs (e.g. `smtbmc yices`, `abc pdr`); defaults to `["smtbmc yices"]` |
 | `reglvl` | int or dict | Regression level; int for all tools, dict for per-tool with `default` |
 | `tool_overrides` | dict | Optional per-tool overrides for `timeout` or `extra_args`, keyed by FPV tool name |
+| `vacuity` | bool | Optional. When true (default for `bmc` / `prove`), run a secondary sby cover-mode pass over auto-derived covers for every `\|->` / `\|=>` antecedent in the property set. Default is false for `cover` / `live` modes. See [Vacuity covers](../concepts/fpv.md#vacuity-covers). |
+| `coi` | bool | Optional. When true (default), run a yosys cone-of-influence pass after the primary proof and report the fraction of design cells reachable from at least one assertion. See [Cone-of-influence coverage](../concepts/fpv.md#cone-of-influence-coverage). |
 
 **Runtime effects:**
 

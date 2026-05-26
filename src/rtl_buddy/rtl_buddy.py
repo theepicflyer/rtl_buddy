@@ -406,9 +406,12 @@ class RtlBuddy:
     ):
         rows = []
         has_coverage = False
+        has_assertions = False
         for suite_result in suite_results:
             cov_summary = self._format_coverage_summary(suite_result["results"])
             has_coverage |= cov_summary is not None
+            assert_summary = self._format_assertions_summary(suite_result["results"])
+            has_assertions |= assert_summary is not None
             row = {
                 "test_name": suite_result["test_name"],
                 "result": suite_result["results"].results["result"],
@@ -422,12 +425,16 @@ class RtlBuddy:
                 )
             if cov_summary is not None:
                 row["coverage"] = cov_summary
+            if assert_summary is not None:
+                row["assertions"] = assert_summary
             rows.append(row)
 
         columns = [("test_name", "Test")]
         if include_run_id:
             columns.append(("run_id", "Run"))
         columns.extend([("result", "Result"), ("desc", "Description")])
+        if has_assertions:
+            columns.append(("assertions", "Assertions"))
         if has_coverage:
             columns.append(("coverage", "Coverage"))
         render_summary(
@@ -439,16 +446,22 @@ class RtlBuddy:
     ):
         rows = []
         has_coverage = False
+        has_assertions = False
         for reg_result in reg_results:
             for suite_result in reg_result["results"]:
                 cov_summary = self._format_coverage_summary(suite_result["results"])
                 has_coverage |= cov_summary is not None
+                assert_summary = self._format_assertions_summary(
+                    suite_result["results"]
+                )
+                has_assertions |= assert_summary is not None
                 rows.append(
                     {
                         "suite_name": reg_result["test_suite"],
                         "test_name": suite_result["test_name"],
                         "result": suite_result["results"].results["result"],
                         "desc": suite_result["results"].results["desc"],
+                        "assertions": assert_summary or "",
                         "coverage": cov_summary or "",
                     }
                 )
@@ -459,6 +472,8 @@ class RtlBuddy:
             ("result", "Result"),
             ("desc", "Description"),
         ]
+        if has_assertions:
+            columns.append(("assertions", "Assertions"))
         if has_coverage:
             columns.append(("coverage", "Coverage"))
         render_summary(
@@ -851,6 +866,19 @@ class RtlBuddy:
 
     def _format_coverage_summary(self, test_results):
         return self.coverage.format_summary(test_results)
+
+    @staticmethod
+    def _format_assertions_summary(test_results):
+        """Return a short Assertions cell, or None when the test didn't enable SVA.
+
+        Shape: `"<fired> fired"` so the column doubles as a hit-counter and a
+        pass/fail signal (anything > 0 fired is a FAIL already reflected in the
+        Result column).
+        """
+        assertions = test_results.results.get("assertions")
+        if not assertions or not assertions.get("enabled"):
+            return None
+        return f"{assertions.get('fired', 0)} fired"
 
     def _do_test_suite(
         self,
@@ -2992,11 +3020,22 @@ class RtlBuddy:
         from .tools.fpv_log_parse import summarize_engines
 
         rows = []
+        has_vacuity = False
+        has_coi = False
+        has_assumes = False
         for r in fpv_results:
             res = r["results"].results
             engines = res.get("engines") or []
             runtime = res.get("runtime_s")
             per_engine = res.get("per_engine") or []
+            vacuity = res.get("vacuity")
+            vacuity_cell = self._format_vacuity_cell(vacuity)
+            has_vacuity |= vacuity_cell is not None
+            coi = res.get("coi")
+            coi_cell = self._format_coi_cell(coi)
+            has_coi |= coi_cell is not None
+            assumes_cell = self._format_assumes_cell(coi)
+            has_assumes |= assumes_cell is not None
             row = {
                 "fpv_name": r["fpv_name"],
                 "result": res["result"],
@@ -3005,6 +3044,9 @@ class RtlBuddy:
                 "depth": str(res.get("depth", "-")),
                 "engines": ", ".join(engines) if engines else "-",
                 "engine_results": summarize_engines(per_engine) if per_engine else "-",
+                "vacuity": vacuity_cell or "-",
+                "coi": coi_cell or "-",
+                "assumes": assumes_cell or "-",
                 "runtime": f"{runtime:.1f}s" if runtime is not None else "-",
             }
             rows.append(row)
@@ -3017,8 +3059,14 @@ class RtlBuddy:
             ("depth", "Depth"),
             ("engines", "Engines"),
             ("engine_results", "Engine Results"),
-            ("runtime", "Runtime"),
         ]
+        if has_vacuity:
+            columns.append(("vacuity", "Vacuity"))
+        if has_coi:
+            columns.append(("coi", "COI"))
+        if has_assumes:
+            columns.append(("assumes", "Assumes"))
+        columns.append(("runtime", "Runtime"))
         render_summary(
             title=title,
             columns=columns,
@@ -3026,6 +3074,71 @@ class RtlBuddy:
             logger=logger,
             metadata=metadata,
         )
+
+    @staticmethod
+    def _format_vacuity_cell(vacuity):
+        """Return a short Vacuity cell, or None if the run didn't do a vacuity pass.
+
+        Shape: `"<vacuous>/<total> vacuous"` so the column is silent when
+        every antecedent is reachable, loud when it isn't.
+        """
+        if not vacuity:
+            return None
+        total = vacuity.get("candidates", 0)
+        if total == 0:
+            return None
+        vacuous = vacuity.get("vacuous", 0)
+        unknown = sum(
+            1 for c in vacuity.get("covers", []) if c.get("status") == "unknown"
+        )
+        if vacuous == 0 and unknown == 0:
+            return f"{total} ok"
+        parts = []
+        if vacuous:
+            parts.append(f"{vacuous}/{total} vacuous")
+        if unknown:
+            parts.append(f"{unknown} unknown")
+        return ", ".join(parts)
+
+    @staticmethod
+    def _format_coi_cell(coi):
+        """Return a short COI cell, or None when no COI data was produced.
+
+        Shape: `"<percent>% (<coi>/<total>)"` so the column carries both
+        the rolled-up ratio and the raw counts behind it. A coverage of
+        100% is still surfaced so the user sees the pass came with full
+        structural reach.
+        """
+        if not coi:
+            return None
+        total = coi.get("total_cells", 0)
+        if total == 0:
+            return None
+        coi_cells = coi.get("coi_cells", 0)
+        percent = coi.get("percent", 0.0)
+        return f"{percent:.0f}% ({coi_cells}/{total})"
+
+    @staticmethod
+    def _format_assumes_cell(coi):
+        """Return a short Assumes cell ('N used, M dead'), or None if N/A.
+
+        Built from the COI pass's $assume cell counts. Silent when the
+        design has no $assume cells at all (`0 used, 0 dead` is just
+        clutter). Loud when any are dead so the user knows to look.
+        """
+        if not coi:
+            return None
+        assumes = coi.get("assumes")
+        if not assumes:
+            return None
+        total = assumes.get("total", 0)
+        if total == 0:
+            return None
+        used = assumes.get("in_assert_coi", 0)
+        dead = assumes.get("dead", 0)
+        if dead == 0:
+            return f"{used} used"
+        return f"{used} used, {dead} dead"
 
     def _exit_code_from_fpv_results(self, fpv_results):
         return 0 if all(r["results"].is_pass() for r in fpv_results) else 1
