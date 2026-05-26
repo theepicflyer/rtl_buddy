@@ -20,17 +20,11 @@ See `rtl-buddy docs show agents` for the stdout envelope schema, JSONL log forma
 Use `rtl-buddy --machine docs show reference/yaml` for exact fields.
 
 - `root_config.yaml` configures platforms, builders, coverage, waveform, synth, P&R, CDC, FPV, and default regression paths.
-- `tests.yaml` is suite-local and defines testbenches plus tests; run `test` and `randtest` from this directory.
+- `tests.yaml` is suite-local and defines testbenches plus tests. Invoke from anywhere with `-c <path>`; outputs anchor on the config dir (see Execution context below).
 - `models.yaml` defines design filelists referenced by tests, synth, CDC, and FPV.
 - `regression.yaml`, `synth_regression.yaml`, `cdc_regression.yaml`, and `fpv_regression.yaml` are repo-level suite lists.
-- `synth.yaml`, `pnr.yaml`, `cdc.yaml`, and `fpv.yaml` define named runs for those flows.
+- `synth.yaml`, `pnr.yaml`, `power.yaml`, `cdc.yaml`, and `fpv.yaml` define named runs for those flows.
 - `specs.yaml` feeds `rb spec` traceability commands.
-
-## CWD rules
-
-- Run `test` and `randtest` from the suite directory that contains `tests.yaml`.
-- Run `regression`, `synth-regression`, `cdc-regression`, and `fpv-regression` from the repo root.
-- For multi-suite repos, summarize results per suite, not only globally.
 
 ## Pass/fail detection
 
@@ -39,17 +33,15 @@ Use `rtl-buddy --machine docs show reference/yaml` for exact fields.
 - Other sims should emit `PASS` or `FAIL` in `artefacts/<test>/test.log`; add an `ERR:` or `FAT:` line when reporting failure.
 - Formal runs use `artefacts/<run>/sby_workdir/status` as the authoritative verdict when present.
 
-## Multi-suite runs
+## Execution context
 
-- Discover suites with `rg --files -g '**/tests.yaml'`.
+Outputs anchor on the **config file**, not your shell's cwd. `rb test -c path/to/tests.yaml` puts `artefacts/<test>/...` and `rtl_buddy.log` under `dirname(tests.yaml)`; same rule for `synth.yaml`, `cdc.yaml`, `fpv.yaml`, `pnr.yaml`, `power.yaml`, `models.yaml`. For `regression`, each suite anchors on its own `tests.yaml`; orchestration log under `regression.yaml`. Explicit CLI input/output paths (`-o out.svg`, `rb filelist <model> out.f`) follow shell semantics — relative to your cwd. Discover multi-suite layouts with `rg --files -g '**/tests.yaml'`; summarize per suite. Reference: `rtl-buddy docs show concepts/execution-context`.
 
 ## Artefact locations
 
-- `rtl_buddy.log` — JSONL in `--machine` mode; written to the suite root (CWD you invoked from).
-- `artefacts/<test>/test.log`, `test.err`, `test.randseed`, `coverage.dat` — sim outputs for a single run.
+- `artefacts/<test>/test.log`, `test.err`, `test.randseed`, `coverage.dat` — sim outputs for one run.
 - `artefacts/<test>/run-0001/test.log` etc. — per-iteration outputs for `randtest`.
-- `artefacts/<test>/dump.fst` — FST waveform produced by debug-mode builds (`-M debug`).
-- For multi-suite runs, each suite directory has its own `rtl_buddy.log` and `artefacts/`; report logs per suite.
+- `artefacts/<test>/dump.fst` — FST waveform from debug-mode builds (`-M debug`).
 - Next docs: `rtl-buddy docs show reference/cli`, `rtl-buddy docs show reference/yaml`, `rtl-buddy docs show known-issues`
 
 ## Waveform viewing
