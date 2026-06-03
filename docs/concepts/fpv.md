@@ -88,6 +88,45 @@ verifications:
 | `vacuity` | Optional bool. When true (default for `bmc` / `prove`), run a secondary sby cover-mode pass over auto-derived cover properties for every `a \|-> b` antecedent in the property set — flags vacuous proofs. Defaults to false for `cover` / `live` modes. See [Vacuity covers](#vacuity-covers). |
 | `coi` | Optional bool. When true (default), run a yosys cone-of-influence pass and report the fraction of design cells reachable from at least one assertion. See [Cone-of-influence coverage](#cone-of-influence-coverage). |
 | `frontend` | SystemVerilog frontend: `"verilog"` (default — fast, no plugin, immediate-assert + simple-concurrent SVA only) or `"slang"` (yosys-slang plugin — required for concurrent SVA `\|->` / `\|=>` / sequence operators and for `bind` to elaborate). `slang` requires `cfg-fpv-tools[].opts.plugin-path` in root_config.yaml. See [Choosing a frontend](#choosing-a-frontend). |
+| `xfail` | Optional bool, default false. Marks the verification as *expected to fail*, **non-strict**. See [Expected failures (xfail)](#expected-failures-xfail). |
+| `xfail_strict` | Optional bool, default false. Like `xfail`, but **strict** — an unexpected pass (`XPASS`) counts as a failure. See [Expected failures (xfail)](#expected-failures-xfail). |
+
+### Expected failures (xfail)
+
+Mark a verification that is **known not to hold** — a teaching property
+that is true but not inductive under `mode: prove`, or a placeholder for
+a not-yet-fixed bug you want tracked in the suite rather than deleted.
+A verification is treated as expected-to-fail when **either** `xfail` or
+`xfail_strict` is set; the verdict is then re-interpreted:
+
+| Actual outcome | Reported as | Counts as |
+|---|---|---|
+| FAIL | `XFAIL` | **pass** — the expected failure happened, so it does not fail the run or `rb fpv-regression` |
+| PASS | `XPASS` | depends on strictness (see below) |
+| SKIP / NA | unchanged | unchanged |
+
+The two markers differ **only** in how an unexpected pass is counted:
+
+| Marker | `XPASS` counts as | Use when |
+|---|---|---|
+| `xfail: true` | **pass** (non-strict) | the property *may* start passing and that is fine / not worth failing on |
+| `xfail_strict: true` | **fail** (strict) | a pass means the marker is stale and you want to be told — the safe choice for a regression guard |
+
+If both are set, strict wins. Each verification picks the marker it
+needs. A common pattern: `xfail_strict: true` on a teaching demo, so the
+regression turns red (via `XPASS`) the moment the property starts
+holding and the marker should be removed.
+
+Like pytest `xfail` without `raises=`, this does not distinguish a
+genuine property disproof from an infrastructure error that also
+surfaces as a FAIL, so reserve it for properties whose failure is
+understood.
+
+The same `xfail` / `xfail_strict` markers and `XFAIL` / `XPASS`
+semantics apply to every command whose results carry a PASS/FAIL/SKIP
+verdict — `tests.yaml`, `synth.yaml`, `cdc.yaml`, `pnr.yaml`, and
+`power.yaml` — via one shared implementation. (`cdc.yaml` in particular
+is a natural fit for a design with known/intentional CDC violations.)
 
 ### Where inputs come from
 

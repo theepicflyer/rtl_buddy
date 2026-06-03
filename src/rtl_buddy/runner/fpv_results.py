@@ -2,6 +2,8 @@
 
 import pprint
 
+from .xfail import is_pass_with_xfail
+
 
 class FpvResults:
     def __init__(self, name, results=None):
@@ -15,7 +17,8 @@ class FpvResults:
             results["desc"] = "NA"
 
     def is_pass(self) -> bool:
-        return self.results["result"] in ("PASS", "SKIP")
+        # PASS/SKIP/XFAIL pass; XPASS passes only for a non-strict xfail.
+        return is_pass_with_xfail(self.results)
 
     def __str__(self):
         return "fpv_results: " + pprint.pformat(self.results)
