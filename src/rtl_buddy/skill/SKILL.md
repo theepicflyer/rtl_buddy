@@ -34,6 +34,10 @@ Use `rtl-buddy --machine docs show reference/yaml` for exact fields.
 - Other sims should emit `PASS` or `FAIL` in `artefacts/<test>/test.log`; add an `ERR:` or `FAT:` line when reporting failure.
 - Formal runs use `artefacts/<run>/sby_workdir/status` as the authoritative verdict when present.
 
+## Formal property authoring
+
+- `mode: prove` is k-induction up to `depth`: a true property can still report **`UNKNOWN`** if it is not an *inductive invariant*. In the induction step every `assert P` plays a dual role — proof obligation at step `k`, **and** constraint on the prior `k` states — so the two preferred fixes (per the YosysHQ SBY FAQ) are: strengthen the property's own hypothesis to exclude bad predecessors (`cnt <= 5`, not `cnt != 26`), or **add a companion assertion that marks an unreachable predecessor state bad** so other properties can use it as a constraint. Raising `depth` is sound but fragile; reach for it last. Keep a known-non-inductive case in regression with `xfail`/`xfail_strict`. Details: `rtl-buddy docs show concepts/fpv`.
+
 ## Mutation testing
 
 - `rb mut list|run|score` drive a campaign from `mut.yaml`. Needs `rtl-buddy-xeno`; a non-empty `scope` also needs `rtl-buddy-view` on `PATH`.

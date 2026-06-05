@@ -88,45 +88,16 @@ verifications:
 | `vacuity` | Optional bool. When true (default for `bmc` / `prove`), run a secondary sby cover-mode pass over auto-derived cover properties for every `a \|-> b` antecedent in the property set — flags vacuous proofs. Defaults to false for `cover` / `live` modes. See [Vacuity covers](#vacuity-covers). |
 | `coi` | Optional bool. When true (default), run a yosys cone-of-influence pass and report the fraction of design cells reachable from at least one assertion. See [Cone-of-influence coverage](#cone-of-influence-coverage). |
 | `frontend` | SystemVerilog frontend: `"verilog"` (default — fast, no plugin, immediate-assert + simple-concurrent SVA only) or `"slang"` (yosys-slang plugin — required for concurrent SVA `\|->` / `\|=>` / sequence operators and for `bind` to elaborate). `slang` requires `cfg-fpv-tools[].opts.plugin-path` in root_config.yaml. See [Choosing a frontend](#choosing-a-frontend). |
-| `xfail` | Optional bool, default false. Marks the verification as *expected to fail*, **non-strict**. See [Expected failures (xfail)](#expected-failures-xfail). |
-| `xfail_strict` | Optional bool, default false. Like `xfail`, but **strict** — an unexpected pass (`XPASS`) counts as a failure. See [Expected failures (xfail)](#expected-failures-xfail). |
+| `xfail` | Optional bool, default false. Marks the verification as *expected to fail*, **non-strict**. See [Expected failures (xfail)](expected-failures.md). |
+| `xfail_strict` | Optional bool, default false. Like `xfail`, but **strict** — an unexpected pass (`XPASS`) counts as a failure. See [Expected failures (xfail)](expected-failures.md). |
 
-### Expected failures (xfail)
-
-Mark a verification that is **known not to hold** — a teaching property
-that is true but not inductive under `mode: prove`, or a placeholder for
-a not-yet-fixed bug you want tracked in the suite rather than deleted.
-A verification is treated as expected-to-fail when **either** `xfail` or
-`xfail_strict` is set; the verdict is then re-interpreted:
-
-| Actual outcome | Reported as | Counts as |
-|---|---|---|
-| FAIL | `XFAIL` | **pass** — the expected failure happened, so it does not fail the run or `rb fpv-regression` |
-| PASS | `XPASS` | depends on strictness (see below) |
-| SKIP / NA | unchanged | unchanged |
-
-The two markers differ **only** in how an unexpected pass is counted:
-
-| Marker | `XPASS` counts as | Use when |
-|---|---|---|
-| `xfail: true` | **pass** (non-strict) | the property *may* start passing and that is fine / not worth failing on |
-| `xfail_strict: true` | **fail** (strict) | a pass means the marker is stale and you want to be told — the safe choice for a regression guard |
-
-If both are set, strict wins. Each verification picks the marker it
-needs. A common pattern: `xfail_strict: true` on a teaching demo, so the
-regression turns red (via `XPASS`) the moment the property starts
-holding and the marker should be removed.
-
-Like pytest `xfail` without `raises=`, this does not distinguish a
-genuine property disproof from an infrastructure error that also
-surfaces as a FAIL, so reserve it for properties whose failure is
-understood.
-
-The same `xfail` / `xfail_strict` markers and `XFAIL` / `XPASS`
-semantics apply to every command whose results carry a PASS/FAIL/SKIP
-verdict — `tests.yaml`, `synth.yaml`, `cdc.yaml`, `pnr.yaml`, and
-`power.yaml` — via one shared implementation. (`cdc.yaml` in particular
-is a natural fit for a design with known/intentional CDC violations.)
+The `xfail` / `xfail_strict` markers are a cross-cutting feature shared
+with every other verdict-carrying command (`tests.yaml`, `synth.yaml`,
+`cdc.yaml`, `pnr.yaml`, `power.yaml`). See
+[Expected failures (xfail)](expected-failures.md) for the full
+re-interpretation semantics, strict-vs-non-strict guidance, and the
+caveat about infrastructure errors. FPV's most common use is a teaching
+property that is true but not inductive under `mode: prove`.
 
 ### Where inputs come from
 
@@ -292,6 +263,159 @@ Scope today:
 - Sequence-valued antecedents (`(req ##2 ack) |-> done`) are extracted but treated as boolean for the cover — close enough for the reachability signal.
 - Multi-line antecedents land in a follow-up.
 
+## Writing properties that prove: BMC vs induction
+
+A property can be **true** of a design yet still fail `mode: prove`. The
+difference is the difference between *bounded* and *unbounded* checking,
+and learning to write properties that hold under induction is the single
+highest-leverage FPV skill.
+
+- **`mode: bmc`** explores only the states reachable within `depth`
+  cycles from reset. A safety property that is never violated in that
+  bounded window passes — even if it is only *accidentally* true.
+- **`mode: prove`** does **temporal k-induction with `k = depth`**: a
+  base case (BMC from reset) plus an inductive step that starts from a
+  *completely arbitrary* state — constrained only by the transition
+  relation, any `assume` statements, and the **induction hypothesis**
+  (every asserted property held for the previous `k` states).
+  Crucially, the inductive step is **not** restricted to reachable
+  states.
+
+### A worked corpus
+
+Take a wrapping counter whose reachable set is exactly `{0..5}`:
+
+```systemverilog
+logic [9:0] cnt;
+initial cnt = 0;
+always @(posedge clk)
+  cnt <= (cnt == 5) ? 0 : cnt + 1;   // 0,1,2,3,4,5,0,1,...
+```
+
+All three assertions below are **true**, but they do not all *prove*:
+
+| Property | True? | Inductive? | Why |
+|---|---|---|---|
+| `cnt != 6`  | yes | **yes** | nothing transitions *to* 6 — `5` wraps to `0`, so `6` has no predecessor at all |
+| `cnt != 26` | yes | **no**  | the unreachable state `cnt == 25` steps to `26`; the inductive step may start on `25` (it satisfies `!= 26`) and walk into the violation |
+| `cnt <= 5`  | yes | **yes** | the reachable set `{0..5}` is *closed* under the transition relation, so the property carries itself forward |
+
+The lesson is the middle vs the bottom row: both express "the counter
+stays small," but only `cnt <= 5` is an **inductive invariant**.
+
+### Why a true property fails induction
+
+An `assert P` plays a **dual role** in `mode: prove`. At step `k` it is
+the **proof obligation**: the solver searches for a state where `¬P`
+holds. At the prior `k` states it is part of the **induction
+hypothesis**, riding along as a constraint — the solver may only
+consider traces in which `P` (and every *other* asserted property) held
+at all prior states. Spelled out, the inductive step is satisfiable iff
+some trace satisfies
+
+```
+P(s₀) ∧ T(s₀,s₁) ∧ P(s₁) ∧ … ∧ P(s_{k-1}) ∧ T(s_{k-1},s_k) ∧ ¬P(s_k)
+```
+
+(`P` here stands for the conjunction of *all* asserted properties at
+that step; `T` is the transition relation, already conjoined with any
+`assume`s.) Assumes differ in one important way: they are constraints at
+*every* step, including `s_k`, which is why an over-strong `assume` can
+mask bugs.
+
+So with `assert (cnt != 26)` alone at `depth = 20` the inductive step is
+free to start from `cnt == 25` (the hypothesis `25 != 26` is satisfied)
+and walk one transition into `cnt == 26`. sby reports this not as a
+disproof but as **`UNKNOWN`**, and writes the offending trace — a
+**counterexample-to-induction (CTI)** — to the induction engine's
+workdir.
+
+`UNKNOWN` is genuinely ambiguous, and resolving it is the engineer's job.
+The CTI may begin in a state that is itself **unreachable** — in which
+case the property is true but simply not closed under the transition
+relation (the situation here: `25` is unreachable) — *or* in a
+**reachable** state, which would be a real design bug or an environment
+`assume` that is too weak. sby cannot tell the two apart, which is exactly
+why the verdict is `UNKNOWN` rather than FAIL: open the CTI waveform and
+decide. For `cnt != 26` we happen to know `25` is unreachable, so it is
+the non-inductive case.
+
+### Write inductive invariants
+
+The fix is to assert a property whose own hypothesis excludes the bad
+predecessor states. With `cnt <= 5`, the induction hypothesis becomes
+"`cnt <= 5` in the prior state," which rules out `25` as a start state;
+every state it admits transitions to another state it admits, so the
+induction closes. The rule of thumb:
+
+> An inductive invariant must be strong enough that its *own* hypothesis
+> rules out the bad predecessors. `cnt != 26` is too weak; `cnt <= 5` is
+> exactly strong enough.
+
+### Assertions strengthen each other
+
+The dual role of `assert` becomes concrete when a verification has more
+than one of them. Take the same counter and add a *second* assertion:
+
+```systemverilog
+assert property (@(posedge clk) cnt != 6);
+assert property (@(posedge clk) cnt != 26);
+```
+
+Individually, `cnt != 6` is inductive (`6` has no predecessor in this
+DUT — `5` wraps to `0`) and `cnt != 26` is not. But assert them
+**together** at `depth = 20` and both pass induction. The mechanism is
+exactly the hypothesis-as-constraint behaviour above:
+
+- To refute `cnt != 26`, the inductive step must find a trace reaching
+  `cnt == 26` in at most `k = 20` transitions whose prior states all
+  satisfy the *full* hypothesis — including `cnt != 6`.
+- The only way to walk *into* `cnt == 26` is to count up through
+  `cnt == 6` somewhere in the chain. The companion assertion forbids
+  `6` at every prior state, so no such CTI exists, and the verdict
+  flips to PASS.
+
+The corollary is the proper generalisation of "inductive invariant":
+*it need not be a single property*. A set of mutually-strengthening
+assertions can be inductive together even when none of them is inductive
+alone, because each one's induction hypothesis tightens every *other*
+one's prior-state constraints. When you are fighting an `UNKNOWN`,
+strengthening the property itself is one lever — adding a companion
+assertion that prunes the CTI ramp is another.
+
+### Raising the depth: sound, but usually the wrong lever
+
+Because `prove` is k-induction up to `depth`, raising the depth can make a
+property that is *not* closed under the transition relation pass anyway —
+it can be **k-inductive** for some larger `k` (here, `cnt != 26` proves
+once `depth ≥ 21`). That is a **sound** result, not a trick: k-induction
+is sound for every `k`. A larger `k` is sometimes even the *intended*
+fix — a design that takes, say, 20 cycles to stabilise from an arbitrary
+state is legitimately only k-inductive for `k ≥ 20`, and a too-small
+depth would conflict with that design intent.
+
+The catch is **fragility**. A proof that leans on `depth` depends on the
+exact length of the spurious counterexample chains in *this* design: a
+wider gap (`cnt != 1000`) needs a correspondingly larger depth, an
+unbounded approach to the bad state defeats any finite depth, and the
+proof can silently break when the design changes. So when a simple
+**inductive invariant** exists, prefer it — `cnt <= 5` is closed under
+*this* counter's transition relation, so it proves without depending on
+`depth`. (That is a property of this design, not of `<=` in general;
+whether any given invariant is inductive is always design-specific.) And
+when you want to keep a known-non-inductive property visible in a
+regression — a teaching case, or a not-yet-fixed bug — mark it
+[`xfail` / `xfail_strict`](expected-failures.md) rather than tuning
+the depth around it.
+
+A runnable version of this corpus — the three properties above, each as
+its own verification with the `xfail` wiring already in place — ships
+as the `demo_abv_induction` block in the
+[rtl-buddy-project-template](https://github.com/rtl-buddy/rtl-buddy-project-template).
+For the theory paper, the first-party YosysHQ guidance the "companion
+assertion" lever above is taken from, and a hands-on practitioner
+walk-through of the same pattern, see [References](#references) below.
+
 ## Artefacts
 
 Per-run outputs land under the command root — `<dir of fpv.yaml>/artefacts/<run>/` (the artefact tree is anchored on the selected `fpv.yaml`'s directory, not your shell's cwd; see [Execution Context](execution-context.md)):
@@ -330,3 +454,23 @@ rb wave-fpv demo_fpv_counter_safety
 - **SymbiYosys-only.** Commercial backends (JasperGold, VC Formal, OneSpin) are not yet wired up — adding them parallels the pattern documented for [SpyGlass in `rb cdc`](https://github.com/rtl-buddy/rtl_buddy/issues/85).
 - **Per-property granularity.** The summary table reports the overall sby verdict, not per-assertion pass/fail. Sby's own `status.json` per task is preserved under `sby_workdir/` for users who need that detail.
 - **Wide SVA coverage.** Yosys's native frontend supports a limited subset of SystemVerilog Assertions. Broader SVA coverage will land alongside the [slang frontend](https://github.com/rtl-buddy/rtl_buddy/issues/88).
+
+## References
+
+Open literature and first-party tool docs the FPV guidance in this page
+is grounded in. No commercial-EDA methodology manuals are used as
+authority (per repo policy).
+
+### Theory
+
+- **Sheeran, Singh & Stålmarck**, *Checking Safety Properties Using Induction and a SAT-Solver* (FMCAD 2000) — the foundational treatment of k-induction; this is the algorithm `mode: prove` implements.
+
+### First-party tool docs
+
+- **[SymbiYosys reference](https://symbiyosys.readthedocs.io/en/latest/reference.html)** — canonical `sby` config schema, mode list, and engine catalogue. The default `depth: 20` and the "k-induction performed by the smtbmc engine" definition are here.
+- **[YosysHQ SBY FAQ — AppNote-011](https://yosyshq.readthedocs.io/projects/ap011/en/latest/faq_sby.html)** — operational guidance, including the *"companion assertion to mark an unreachable predecessor state bad"* lever used in [*Assertions strengthen each other*](#assertions-strengthen-each-other): "adding assertions to mark them bad helps the solver find a proof for a lower `depth`."
+
+### Practitioner walk-throughs
+
+- **ZipCPU — [*An Exercise in using Formal Induction*](https://zipcpu.com/blog/2018/03/10/induction-exercise.html)** — the most-cited open hands-on tutorial for the same property-strengthening pattern, on a SymbiYosys-based flow.
+- **ZipCPU — [Formal Verification posts](https://zipcpu.com/formal/formal.html)** — index of related material (aggregating invariants across modules, constraining inputs, reset synchronisers).
