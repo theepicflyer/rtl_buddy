@@ -92,6 +92,12 @@ class CdcConfigFile:
     # can add frontends without an rtl_buddy release. Unknown values
     # are rejected by the analyzer's own arg parser.
     frontend: str | None = None
+    # Modules to treat as black boxes: each is forwarded as-is via a
+    # repeated ``--blackbox <module>`` to the analyzer (rtl-buddy-cdc#259),
+    # stubbing out that module's internals during elaboration. Like
+    # ``frontend`` above, values are intentionally not validated here so the
+    # analyzer owns the accepted-name set. Empty by default (no blackboxing).
+    blackbox: list[str] = field(default_factory=list)
     # Recognized-synchronizer instance patterns (regexes) for `--check-xdc`.
     # A crossing the analyzer flags as a violation but whose instance matches
     # one of these is treated as a real synchronizer the engine did not
@@ -126,6 +132,7 @@ class CdcConfigFile:
             _reglvl=self.reglvl,
             tool_overrides=self.tool_overrides,
             frontend=self.frontend,
+            blackbox=self.blackbox,
             recognized_syncs=list(self.recognized_syncs),
             xfail=self.xfail,
             xfail_strict=self.xfail_strict,
@@ -143,6 +150,7 @@ class CdcConfig:
     _reglvl: int | dict | None
     tool_overrides: dict | None
     frontend: str | None = None
+    blackbox: list[str] = dc_field(default_factory=list)
     recognized_syncs: list[str] = dc_field(default_factory=list)
     xfail: bool = False
     xfail_strict: bool = False
