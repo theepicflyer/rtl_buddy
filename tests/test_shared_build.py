@@ -55,6 +55,9 @@ class DummyRootCfg:
     def get_rtl_builder_cfg(self):
         return self.builder_cfg
 
+    def resolve_rtl_builder_cfg(self, _test_builder_name=None):
+        return self.builder_cfg
+
     def get_use_lcov(self, _simulator_name):
         return False
 
@@ -92,6 +95,9 @@ class DummyTestCfg:
 
     def get_name(self):
         return self.name
+
+    def get_builder_name(self):
+        return None
 
     def get_model(self):
         return self.model

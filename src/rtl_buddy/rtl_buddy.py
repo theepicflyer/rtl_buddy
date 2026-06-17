@@ -704,15 +704,20 @@ class RtlBuddy:
         rows = []
         has_coverage = False
         has_assertions = False
+        builders = set()
         for suite_result in suite_results:
             cov_summary = self._format_coverage_summary(suite_result["results"])
             has_coverage |= cov_summary is not None
             assert_summary = self._format_assertions_summary(suite_result["results"])
             has_assertions |= assert_summary is not None
+            builder = suite_result.get("builder")
+            if builder:
+                builders.add(builder)
             row = {
                 "test_name": suite_result["test_name"],
                 "result": suite_result["results"].results["result"],
                 "desc": suite_result["results"].results["desc"],
+                "builder": builder or "",
             }
             if include_run_id:
                 row["run_id"] = (
@@ -730,6 +735,10 @@ class RtlBuddy:
         if include_run_id:
             columns.append(("run_id", "Run"))
         columns.extend([("result", "Result"), ("desc", "Description")])
+        # Per-row Builder column only when more than one builder is in play;
+        # a single-builder run is named in the footer metadata instead.
+        if len(builders) > 1:
+            columns.append(("builder", "Builder"))
         if has_assertions:
             columns.append(("assertions", "Assertions"))
         if has_coverage:
@@ -744,6 +753,7 @@ class RtlBuddy:
         rows = []
         has_coverage = False
         has_assertions = False
+        builders = set()
         for reg_result in reg_results:
             for suite_result in reg_result["results"]:
                 cov_summary = self._format_coverage_summary(suite_result["results"])
@@ -752,12 +762,16 @@ class RtlBuddy:
                     suite_result["results"]
                 )
                 has_assertions |= assert_summary is not None
+                builder = suite_result.get("builder")
+                if builder:
+                    builders.add(builder)
                 rows.append(
                     {
                         "suite_name": reg_result["test_suite"],
                         "test_name": suite_result["test_name"],
                         "result": suite_result["results"].results["result"],
                         "desc": suite_result["results"].results["desc"],
+                        "builder": builder or "",
                         "assertions": assert_summary or "",
                         "coverage": cov_summary or "",
                     }
@@ -769,6 +783,9 @@ class RtlBuddy:
             ("result", "Result"),
             ("desc", "Description"),
         ]
+        # Per-row Builder column only when more than one builder is in play.
+        if len(builders) > 1:
+            columns.append(("builder", "Builder"))
         if has_assertions:
             columns.append(("assertions", "Assertions"))
         if has_coverage:
@@ -782,6 +799,30 @@ class RtlBuddy:
             if metadata is not None
             else [f"Builder: {self.builder}", f"Builder Mode: {self.rtl_builder_mode}"],
         )
+
+    def _builder_metadata_line(self, suite_cfgs, test_name=None):
+        """Footer line naming the distinct builder(s) the run uses.
+
+        Resolves each test's effective builder (per-test/suite `builder:`,
+        `--builder` override, or platform default) so the summary reflects
+        what actually ran rather than only the platform default. `suite_cfgs`
+        may be one SuiteConfig or an iterable; for regression it lists the
+        union across suites. Renders `Builder: x` for a single builder and
+        `Builders: x, y` when more than one is in play.
+        """
+        if not isinstance(suite_cfgs, (list, tuple)):
+            suite_cfgs = [suite_cfgs]
+        names = sorted(
+            {
+                self.root_cfg.resolve_rtl_builder_cfg(t.get_builder_name()).get_name()
+                for suite_cfg in suite_cfgs
+                for t in suite_cfg.get_tests(test_name)
+            }
+        )
+        if not names:
+            names = [self.builder]
+        label = "Builder" if len(names) == 1 else "Builders"
+        return f"{label}: {', '.join(names)}"
 
     def _display_path(self, path: str, *, base_dir: str | None = None) -> str:
         if base_dir is None:
@@ -959,7 +1000,7 @@ class RtlBuddy:
             coverage_dir_summary=coverage_dir_summary,
             coverage_dir_summary_file=coverage_dir_summary_file,
         )
-        metadata = [f"Builder: {self.builder}"]
+        metadata = [self._builder_metadata_line(self.suite_cfg, test_name)]
         metadata.extend(
             self.coverage.build_metadata(
                 suite_results,
@@ -1050,7 +1091,7 @@ class RtlBuddy:
                     "RandTest Replay Summary",
                     suite_results,
                     include_run_id=True,
-                    metadata=[f"Builder: {self.builder}"],
+                    metadata=[self._builder_metadata_line(self.suite_cfg, test_name)],
                 )
         else:
             suite_results = self._do_test_suite(
@@ -1065,7 +1106,7 @@ class RtlBuddy:
                     "RandTest Results Summary",
                     suite_results,
                     include_run_id=True,
-                    metadata=[f"Builder: {self.builder}"],
+                    metadata=[self._builder_metadata_line(self.suite_cfg, test_name)],
                 )
 
         exit_code = self._exit_code_from_results(suite_results)
@@ -1085,18 +1126,32 @@ class RtlBuddy:
             )
         raise typer.Exit(exit_code)
 
-    def _append_skip_results(self, test_name, desc, run_ids, suite_results):
+    def _append_skip_results(
+        self, test_name, desc, run_ids, suite_results, builder=None
+    ):
         test_results = SkipResults(name=test_name + "/results", desc=desc)
         for run_id in run_ids:
             suite_results.append(
-                {"test_name": test_name, "randmode_i": run_id, "results": test_results}
+                {
+                    "test_name": test_name,
+                    "randmode_i": run_id,
+                    "results": test_results,
+                    "builder": builder,
+                }
             )
 
-    def _append_setup_results(self, test_name, desc, run_ids, suite_results):
+    def _append_setup_results(
+        self, test_name, desc, run_ids, suite_results, builder=None
+    ):
         test_results = SetupFailResults(name=test_name + "/results", desc=desc)
         for run_id in run_ids:
             suite_results.append(
-                {"test_name": test_name, "randmode_i": run_id, "results": test_results}
+                {
+                    "test_name": test_name,
+                    "randmode_i": run_id,
+                    "results": test_results,
+                    "builder": builder,
+                }
             )
 
     def _expand_tests_with_sweep(self, test_cfg, suite_dir):
@@ -1175,10 +1230,15 @@ class RtlBuddy:
                 self._apply_xfail_logged(res, test_cfg, "suite.xfail")
         return results
 
-    def _append_results(self, test_name, run_ids, results, suite_results):
+    def _append_results(self, test_name, run_ids, results, suite_results, builder=None):
         for run_id, test_results in zip(run_ids, results):
             suite_results.append(
-                {"test_name": test_name, "randmode_i": run_id, "results": test_results}
+                {
+                    "test_name": test_name,
+                    "randmode_i": run_id,
+                    "results": test_results,
+                    "builder": builder,
+                }
             )
 
     def _format_coverage_summary(self, test_results):
@@ -1216,7 +1276,17 @@ class RtlBuddy:
         suite_dir = str(Path(suite_cfg.get_path()).resolve().parent)
         suite_results = []
         for t in tests:
-            t_lvl = t.get_reglvl(self.builder)
+            # The builder this test will actually run on (per-test/suite
+            # `builder:`, a `--builder` override, or the platform default).
+            # Stamped onto each result row so the summary can report it, and
+            # used to resolve any per-builder regression level.
+            t_builder = self.root_cfg.resolve_rtl_builder_cfg(
+                t.get_builder_name()
+            ).get_name()
+            if reg_level is not None or start_level is not None:
+                t_lvl = t.get_reglvl(t_builder)
+            else:
+                t_lvl = 0
             if reg_level is not None and t_lvl > reg_level:
                 log_event(
                     logger,
@@ -1232,6 +1302,7 @@ class RtlBuddy:
                     f"lvl {t_lvl} > cmd end_level {reg_level}",
                     run_ids,
                     suite_results,
+                    builder=t_builder,
                 )
                 continue
 
@@ -1250,6 +1321,7 @@ class RtlBuddy:
                     f"lvl {t_lvl} < cmd start_level {start_level}",
                     run_ids,
                     suite_results,
+                    builder=t_builder,
                 )
                 continue
 
@@ -1257,10 +1329,17 @@ class RtlBuddy:
                 t, suite_dir=suite_dir
             )
             if sweep_error is not None:
-                self._append_setup_results(t.name, sweep_error, run_ids, suite_results)
+                self._append_setup_results(
+                    t.name, sweep_error, run_ids, suite_results, builder=t_builder
+                )
                 continue
 
             for expanded_test_cfg in expanded_tests:
+                # A sweep-expanded test may carry its own `builder:`; resolve
+                # per expansion so the stamped builder matches what runs.
+                exp_builder = self.root_cfg.resolve_rtl_builder_cfg(
+                    expanded_test_cfg.get_builder_name()
+                ).get_name()
                 run_results = self._run_test_cfg_for_run_ids(
                     test_cfg=expanded_test_cfg,
                     run_ids=run_ids,
@@ -1270,7 +1349,11 @@ class RtlBuddy:
                     suite_dir=suite_dir,
                 )
                 self._append_results(
-                    expanded_test_cfg.name, run_ids, run_results, suite_results
+                    expanded_test_cfg.name,
+                    run_ids,
+                    run_results,
+                    suite_results,
+                    builder=exp_builder,
                 )
         return suite_results
 
@@ -1490,7 +1573,7 @@ class RtlBuddy:
             all_suite_results.extend(reg_result["results"])
 
         metadata = [
-            f"Builder: {self.builder}",
+            self._builder_metadata_line(list(self.reg_cfg.get_suite_configs())),
             f"Builder Mode: {self.rtl_builder_mode}",
         ]
         dir_summary_paths = self._resolve_coverage_dir_summary_paths(

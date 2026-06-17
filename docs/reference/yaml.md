@@ -253,6 +253,10 @@ models:
 - `testbenches`
 - `tests`
 
+**Optional top-level keys:**
+
+- `builder` — name of a `cfg-rtl-builder` entry used as the suite-wide simulator default; overridable per test (see [Selecting the simulator builder](#selecting-the-simulator-builder)).
+
 **Example:**
 
 ```yaml
@@ -312,9 +316,60 @@ tests:
 | `preproc.path` | string | Path to pre-processing script |
 | `postproc.path` | string | Path to post-processing script (parsed but not yet fully active) |
 | `covers` | list of strings | IDs of spec coverage items this test addresses (e.g. `["BLOCK-COV-01"]`). Used by `rb spec check-coverage`; has no effect at simulation time. |
+| `builder` | string | Name of a `cfg-rtl-builder` entry to simulate this test with. Overrides the suite-wide `builder` and the platform default (see below). |
 | `assertions` | bool | When true and the builder is Verilator, compile in SVA via `--assert` (and `--coverage-user` for cover-property hits) and add an `Assertions` column to the `rb test` results table. See [Assertion-Based Verification](../concepts/abv-simulation.md). |
 | `xfail` | bool | Optional, default false. Marks the test expected-to-fail, **non-strict**: a FAIL becomes `XFAIL` (a pass); an unexpected PASS becomes `XPASS` but still counts as a pass. SKIP/NA pass through. Mirrors the `fpv.yaml` field — see [Expected failures (xfail)](../concepts/expected-failures.md). |
 | `xfail_strict` | bool | Optional, default false. Like `xfail` but **strict**: an unexpected PASS (`XPASS`) counts as a failure. Either flag marks the test expected-to-fail; strict wins if both are set. |
+
+### Selecting the simulator builder
+
+A test runs on a builder defined in `root_config.yaml`'s `cfg-rtl-builder`. The
+effective builder is resolved with this precedence:
+
+1. **`--builder <name>` CLI override** — forces the builder for every test in the run (it "overrides all others").
+2. **Per-test `builder:`** — set on an individual test entry.
+3. **Suite-wide `builder:`** — the top-level `builder:` key in `tests.yaml`.
+4. **Platform default** — the `builder` selected by the active `cfg-platforms` entry.
+
+When no `builder:` is set anywhere and no `--builder` is passed, the platform
+default applies — so existing suites are unaffected. The chosen builder's
+`simulator-family` (e.g. `verilator`, `icarus`) drives backend-specific
+behavior such as coverage and assertion support. When `reglvl` is a per-builder
+dict, the level is resolved against the test's *effective* builder.
+
+```yaml
+rtl-buddy-filetype: test_config
+builder: icarus            # suite-wide default
+testbenches:
+  - name: "tb_top"
+    filelist: ["tb_top.sv"]
+tests:
+  - name: "smoke"          # uses the suite default (icarus)
+    desc: "sanity test"
+    reglvl: 0
+    model: "my_design"
+    model_path: "../src/models.yaml"
+    testbench: "tb_top"
+  - name: "fast_regress"   # overrides back to verilator for this test
+    desc: "speed-sensitive"
+    reglvl: 0
+    model: "my_design"
+    model_path: "../src/models.yaml"
+    testbench: "tb_top"
+    builder: verilator
+```
+
+**Limitation — coverage follows the platform builder:** coverage collection and
+reporting (`rb test --coverage`, the Coverview packer, and the
+`builder`/`simulator_family` labels on coverage artifacts) key off the
+*platform-selected* builder, not a per-test/suite `builder:`. When a test's
+effective builder differs from the platform default *and* no `--builder`
+override is in effect, the coverage layer can mislabel or misparse results. To
+collect coverage on an alternate builder, either run the suite with
+`--builder <name>` (which forces the builder consistently across simulation and
+coverage) or make that builder the platform default. In practice this mostly
+affects Verilator — the only family that emits line/toggle coverage today; VCS
+and Icarus do not collect coverage through this path.
 
 ### cocotb testbenches
 
